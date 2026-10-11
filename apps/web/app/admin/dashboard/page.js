@@ -8,6 +8,7 @@ import DashboardShell, {
   MetricCard,
   StatusBadge,
 } from '../../components/DashboardShell.js';
+import NotificationPreferences from '../../components/NotificationPreferences.js';
 import { apiRequest, formatKES, getApiUrl, roleDashboard } from '../../lib/api.js';
 
 const tabs = [
@@ -17,6 +18,7 @@ const tabs = [
   { key: 'complaints', label: 'Complaints' },
   { key: 'categories', label: 'Categories' },
   { key: 'activity', label: 'Audit activity' },
+  { key: 'notifications', label: 'Notifications' },
 ];
 
 const complaintActions = {
@@ -520,6 +522,13 @@ export default function AdminDashboardPage() {
               ))}
             </ol>
           )}
+        </section>
+      )}
+
+      {tab === 'notifications' && (
+        <section>
+          <h2 className="mb-4 text-xl font-bold">Notifications</h2>
+          <NotificationPreferences />
         </section>
       )}
     </DashboardShell>

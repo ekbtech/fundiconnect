@@ -257,6 +257,7 @@ Sensitive administrative actions shall be recorded in an audit trail.
 - reviews
 - complaints
 - notifications
+- notification_preferences
 - conversations and messages (advanced)
 - platform_settings
 - audit_logs

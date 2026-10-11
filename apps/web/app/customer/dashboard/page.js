@@ -8,6 +8,7 @@ import DashboardShell, {
   MetricCard,
   StatusBadge,
 } from '../../components/DashboardShell.js';
+import NotificationPreferences from '../../components/NotificationPreferences.js';
 import { apiRequest, formatKES, getApiUrl, roleDashboard } from '../../lib/api.js';
 
 const tabs = [
@@ -32,10 +33,6 @@ function CustomerDashboard() {
   const [payments, setPayments] = useState([]);
   const [complaints, setComplaints] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [notificationPreferences, setNotificationPreferences] = useState({
-    inAppEnabled: true,
-    emailEnabled: true,
-  });
   const [tab, setTab] = useState('overview');
   const [mode, setMode] = useState(requestedIntent === 'quote' ? 'quote' : 'booking');
   const [serviceId, setServiceId] = useState(requestedServiceId);
@@ -63,7 +60,6 @@ function CustomerDashboard() {
       paymentResult,
       complaintResult,
       notificationResult,
-      notificationPreferenceResult,
     ] =
       await Promise.all([
         apiRequest('/services?pageSize=50'),
@@ -72,7 +68,6 @@ function CustomerDashboard() {
         apiRequest('/payments'),
         apiRequest('/reviews/complaints'),
         apiRequest('/notifications'),
-        apiRequest('/notifications/preferences'),
       ]);
     setUser(identity.user);
     setProfileForm({ firstName: identity.user.firstName, lastName: identity.user.lastName });
@@ -82,7 +77,6 @@ function CustomerDashboard() {
     setPayments(paymentResult.payments);
     setComplaints(complaintResult.complaints);
     setNotifications(notificationResult.notifications);
-    setNotificationPreferences(notificationPreferenceResult.preferences);
     setServiceId((current) => current || requestedServiceId);
   }, [requestedServiceId, router]);
 
@@ -233,17 +227,6 @@ function CustomerDashboard() {
     await perform(
       () => apiRequest(`/notifications/${notificationId}/read`, { method: 'PATCH' }),
       'Notification marked as read.',
-    );
-  }
-
-  async function saveNotificationPreferences(event) {
-    event.preventDefault();
-    await perform(
-      () => apiRequest('/notifications/preferences', {
-        method: 'PATCH',
-        body: JSON.stringify(notificationPreferences),
-      }),
-      'Notification preferences updated.',
     );
   }
 
@@ -592,44 +575,7 @@ function CustomerDashboard() {
       {tab === 'notifications' && (
         <section>
           <h2 className="mb-4 text-xl font-bold">Notifications</h2>
-          <form
-            className="mb-6 max-w-2xl space-y-4 rounded-2xl border border-stone-200 bg-white p-5"
-            onSubmit={saveNotificationPreferences}
-          >
-            <h3 className="font-bold">Notification preferences</h3>
-            <p className="text-sm text-slate-600">
-              Choose whether to receive marketplace updates in the app or by email. Account verification and password recovery emails are not affected.
-            </p>
-            <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
-              <input
-                checked={notificationPreferences.inAppEnabled}
-                onChange={(event) => setNotificationPreferences({
-                  ...notificationPreferences,
-                  inAppEnabled: event.target.checked,
-                })}
-                type="checkbox"
-              />
-              In-app notifications
-            </label>
-            <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
-              <input
-                checked={notificationPreferences.emailEnabled}
-                onChange={(event) => setNotificationPreferences({
-                  ...notificationPreferences,
-                  emailEnabled: event.target.checked,
-                })}
-                type="checkbox"
-              />
-              Marketplace email notifications
-            </label>
-            <button
-              className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
-              disabled={saving}
-              type="submit"
-            >
-              {saving ? 'Saving…' : 'Save preferences'}
-            </button>
-          </form>
+          <NotificationPreferences />
           <NotificationList notifications={notifications} onRead={markNotificationRead} saving={saving} />
         </section>
       )}

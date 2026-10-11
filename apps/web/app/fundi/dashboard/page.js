@@ -8,6 +8,7 @@ import DashboardShell, {
   MetricCard,
   StatusBadge,
 } from '../../components/DashboardShell.js';
+import NotificationPreferences from '../../components/NotificationPreferences.js';
 import { apiRequest, formatKES, getApiUrl, roleDashboard } from '../../lib/api.js';
 
 const tabs = [
@@ -17,6 +18,7 @@ const tabs = [
   { key: 'services', label: 'My services' },
   { key: 'availability', label: 'Availability' },
   { key: 'profile', label: 'Profile & areas' },
+  { key: 'notifications', label: 'Notifications' },
 ];
 
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -704,6 +706,14 @@ export default function FundiDashboardPage() {
           </section>
         </div>
       )}
+
+      {tab === 'notifications' && (
+        <section>
+          <h2 className="mb-4 text-xl font-bold">Notifications</h2>
+          <NotificationPreferences />
+        </section>
+      )}
+
       {tab === 'availability' && (
         <section className="max-w-3xl rounded-2xl border border-stone-200 bg-white p-5">
           <h2 className="text-xl font-bold">Weekly appointment availability</h2>
