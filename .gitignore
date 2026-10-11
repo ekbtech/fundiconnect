@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+.env*
+!.env.example
+npm-debug.log*
+.DS_Store
+coverage/
+*.log
+**/private-uploads/
+**/backups/
+*.sql.gz
+*.sql.backup
+*.dump

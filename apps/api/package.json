@@ -1,0 +1,21 @@
+{
+  "name": "@fundiconnect/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "build": "node --check src/server.js && node --check src/routes/auth.js && node --check src/routes/users.js && node --check src/routes/services.js && node --check src/routes/fundi.js && node --check src/routes/admin.js && node --check src/routes/bookings.js && node --check src/routes/quotations.js && node --check src/routes/payments.js && node --check src/routes/reviews.js && node --check src/routes/notifications.js && node --check src/middleware/authorize-role.js && node --check src/middleware/origin-guard.js && node --check src/middleware/error-handler.js && node --check scripts/create-admin.js && node --check scripts/migrate.js && node --check src/catalog/query.js && node --check src/bookings/availability.js && node --check src/bookings/lifecycle.js && node --check src/bookings/expiry.js && node --check src/uploads/verification-documents.js && node --check src/uploads/media.js && node --check src/auth/action-token.js && node --check src/email/mailer.js",
+    "admin:create": "node scripts/create-admin.js",
+    "db:migrate": "node scripts/migrate.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "cors": "2.8.5",
+    "dotenv": "16.4.5",
+    "express": "4.21.2",
+    "multer": "^2.4.0",
+    "mysql2": "3.5.1",
+    "nodemailer": "^10.0.16"
+  }
+}
