@@ -253,6 +253,14 @@ const createRequestHandler = asyncHandler(async (req, res) => {
   const storedPaths = [];
   try {
     await connection.beginTransaction();
+    const [customers] = await connection.execute(
+      'SELECT account_status FROM users WHERE id = ? FOR UPDATE',
+      [req.user.id],
+    );
+    if (customers.length === 0 || customers[0].account_status !== 'active') {
+      await connection.rollback();
+      return res.status(403).json({ message: 'Suspended accounts cannot create quotation requests.' });
+    }
     const [result] = await connection.execute(
       `INSERT INTO quotation_requests (customer_id, provider_id, service_id, title, description, status)
        VALUES (?, ?, ?, ?, ?, 'requested')`,

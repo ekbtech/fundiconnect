@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   isValidAccountStatusChange,
   isValidComplaintStatusTransition,
+  isValidReviewModeration,
   parseCategory,
 } from './admin.js';
 import {
@@ -39,6 +40,14 @@ test('review text is optional but validates supplied content', () => {
   assert.equal(normalizeReviewComment(null), '');
   assert.equal(normalizeReviewComment('  helpful and professional  '), 'helpful and professional');
   assert.equal(normalizeReviewComment('x'.repeat(2001)), null);
+});
+
+test('review moderation requires a visibility state and a bounded reason', () => {
+  assert.equal(isValidReviewModeration(false, 'Contains personal information'), true);
+  assert.equal(isValidReviewModeration(true, 'Appeal reviewed'), true);
+  assert.equal(isValidReviewModeration('false', 'Contains personal information'), false);
+  assert.equal(isValidReviewModeration(false, '  '), false);
+  assert.equal(isValidReviewModeration(false, 'x'.repeat(1001)), false);
 });
 
 test('category input validates required fields, slugs, and partial updates', () => {

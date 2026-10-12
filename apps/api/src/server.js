@@ -15,6 +15,12 @@ import servicesRouter from './routes/services.js';
 import usersRouter from './routes/users.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { isAllowedOrigin, originGuard } from './middleware/origin-guard.js';
+import {
+  accountActionRateLimiter,
+  apiWriteRateLimiter,
+  loginRateLimiter,
+  securityHeaders,
+} from './middleware/security.js';
 
 dotenv.config();
 
@@ -24,6 +30,7 @@ const frontendOrigin =
   process.env.WEB_ORIGIN || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3000');
 
 app.disable('x-powered-by');
+app.use(securityHeaders);
 app.use(originGuard(frontendOrigin));
 app.use((req, res, next) => {
   const requestOrigin = req.get('origin');
@@ -33,6 +40,12 @@ app.use((req, res, next) => {
   cors({ origin: allowedOrigin, credentials: true })(req, res, next);
 });
 app.use(express.json({ limit: '100kb' }));
+app.use('/api/v1', (req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+  return apiWriteRateLimiter(req, res, next);
+});
 
 app.get('/api/v1/health', (req, res) => {
   res.status(200).json({
@@ -50,6 +63,11 @@ app.get('/api/v1', (req, res) => {
   });
 });
 
+app.use('/api/v1/auth/login', loginRateLimiter);
+app.use('/api/v1/auth/verification/resend', accountActionRateLimiter);
+app.use('/api/v1/auth/verify-email', accountActionRateLimiter);
+app.use('/api/v1/auth/password/forgot', accountActionRateLimiter);
+app.use('/api/v1/auth/password/reset', accountActionRateLimiter);
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/admin', adminRouter);
 app.use('/api/v1/fundi', fundiRouter);

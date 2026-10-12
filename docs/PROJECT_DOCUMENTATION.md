@@ -200,7 +200,7 @@ Reviews shall contain a rating and optional written feedback.
 
 The system shall support reporting inappropriate reviews or provider conduct.
 
-Administrators shall record moderation decisions. Legitimate negative reviews shall not automatically be removed simply because a provider disagrees.
+Administrators shall be able to hide or restore reviews only with a recorded reason. Moderation shall preserve the original review and audit every visibility change. Hidden reviews shall not appear in public listings or provider rating averages. Legitimate negative reviews shall not automatically be removed simply because a provider disagrees.
 
 ### 6.10 Notifications
 
@@ -222,7 +222,17 @@ A booking value must not automatically be treated as money received or commissio
 
 Sensitive administrative actions shall be recorded in an audit trail.
 
-## 7. Business Rules
+## 7. Security Requirements
+
+- Passwords are stored using a modern password-hashing algorithm; session cookies are HTTP-only and secure in production.
+- Protected API operations validate authentication, role and record ownership.
+- Authentication and sensitive account actions are rate limited. Other write requests have a bounded per-IP rate.
+- The API sends standard security headers and uses an explicit CORS/origin policy.
+- SQL queries are parameterized, and uploaded files are checked against size, declared type and content signatures.
+- Production deployments must use HTTPS and store secrets outside source control.
+- Rate limiting currently uses an in-process store. Deployments with multiple API instances must configure a shared store and trust only known reverse proxies.
+
+## 8. Business Rules
 
 1. Every business record must be associated with the appropriate customer, provider or platform scope.
 2. Every protected operation must verify the requesting user's identity, role and ownership rights.
@@ -237,7 +247,7 @@ Sensitive administrative actions shall be recorded in an audit trail.
 11. Provider verification must not be inferred merely from account registration.
 12. Platform commission rules must be configurable and documented before charging providers.
 
-## 8. Main Database Entities
+## 9. Main Database Entities
 
 - users
 - provider_profiles
@@ -266,7 +276,7 @@ Each entity shall use appropriate primary keys, foreign keys, indexes, timestamp
 
 Financial amounts shall use fixed-precision decimal types. Database transactions shall protect multi-step operations such as confirming a booking or recording a payment.
 
-## 9. System Architecture
+## 10. System Architecture
 
 ### Frontend
 
@@ -300,7 +310,7 @@ Potential integrations include email delivery, M-Pesa Daraja, mapping services a
 
 Integrations shall be implemented behind service modules to make testing and future replacement easier.
 
-## 10. API Design
+## 11. API Design
 
 The API shall use a versioned prefix such as `/api/v1`.
 
@@ -313,7 +323,7 @@ Core route groups:
 - `/bookings` — request, update and status handling.
 - `/payments` — payment record lifecycle.
 - `/reviews` — ratings and review submission.
-- `/admin` — restricted operational and reporting routes.
+- `/admin` — restricted operational, review-moderation and reporting routes.
 
 The API shall enforce authentication, role checks, validation and error handling consistently.
 
@@ -326,7 +336,7 @@ Search results shall not expose inactive services or unapproved provider profile
 
 The fundi dashboard shall show profile verification, work counts, recent jobs, service listings and service areas. Fundis may update their professional profile and owned service listings, and move owned bookings through the allowed job lifecycle. Administrative dashboard access shall be restricted to administrators and include platform statistics, provider verification review, account visibility and audit history. Administrative verification decisions shall be recorded in the audit log; rejected verification requires a reason. Administrator accounts shall be provisioned outside public registration.
 
-## 11. Initial Delivery Plan
+## 12. Initial Delivery Plan
 
 The project should be implemented in phased delivery:
 
@@ -339,7 +349,7 @@ The project should be implemented in phased delivery:
 7. Admin dashboards and reporting
 8. Advanced integrations and product optimization
 
-## 12. Success Criteria
+## 13. Success Criteria
 
 The MVP is successful when:
 

@@ -15,7 +15,9 @@ const tabs = [
   { key: 'overview', label: 'Overview' },
   { key: 'verification', label: 'Provider verification' },
   { key: 'users', label: 'Users' },
+  { key: 'deletions', label: 'Deletion requests' },
   { key: 'complaints', label: 'Complaints' },
+  { key: 'reviews', label: 'Reviews' },
   { key: 'categories', label: 'Categories' },
   { key: 'activity', label: 'Audit activity' },
   { key: 'notifications', label: 'Notifications' },
@@ -34,20 +36,26 @@ export default function AdminDashboardPage() {
   const [dashboard, setDashboard] = useState(null);
   const [providers, setProviders] = useState([]);
   const [users, setUsers] = useState([]);
+  const [deletionRequests, setDeletionRequests] = useState([]);
   const [logs, setLogs] = useState([]);
   const [complaints, setComplaints] = useState([]);
+  const [reviews, setReviews] = useState([]);
   const [categories, setCategories] = useState([]);
   const [financialSummary, setFinancialSummary] = useState(null);
   const [tab, setTab] = useState('overview');
   const [verificationFilter, setVerificationFilter] = useState('pending');
   const [rejectionReasons, setRejectionReasons] = useState({});
   const [complaintReasons, setComplaintReasons] = useState({});
+  const [deletionReasons, setDeletionReasons] = useState({});
+  const [reviewReasons, setReviewReasons] = useState({});
   const [categoryForm, setCategoryForm] = useState({ name: '', slug: '', description: '' });
   const [loading, setLoading] = useState(true);
   const [savingProvider, setSavingProvider] = useState('');
   const [savingComplaint, setSavingComplaint] = useState('');
+  const [savingReview, setSavingReview] = useState('');
   const [savingCategory, setSavingCategory] = useState('');
   const [savingAccount, setSavingAccount] = useState('');
+  const [savingDeletion, setSavingDeletion] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -57,12 +65,14 @@ export default function AdminDashboardPage() {
       router.replace(roleDashboard(identity.user.role));
       return;
     }
-    const [summary, providerResult, userResult, logResult, complaintResult, categoryResult, financialResult] = await Promise.all([
+    const [summary, providerResult, userResult, deletionResult, logResult, complaintResult, reviewResult, categoryResult, financialResult] = await Promise.all([
       apiRequest('/admin/dashboard'),
       apiRequest(`/admin/providers?status=${encodeURIComponent(status)}`),
       apiRequest('/admin/users'),
+      apiRequest('/admin/deletion-requests?status=pending'),
       apiRequest('/admin/audit-logs'),
       apiRequest('/admin/complaints?status=all'),
+      apiRequest('/admin/reviews'),
       apiRequest('/admin/categories'),
       apiRequest('/admin/reports/financial'),
     ]);
@@ -70,8 +80,10 @@ export default function AdminDashboardPage() {
     setDashboard(summary.stats);
     setProviders(providerResult.providers);
     setUsers(userResult.users);
+    setDeletionRequests(deletionResult.requests);
     setLogs(logResult.logs);
     setComplaints(complaintResult.complaints);
+    setReviews(reviewResult.reviews);
     setCategories(categoryResult.categories);
     setFinancialSummary(financialResult.financialSummary);
   }, [router, verificationFilter]);
@@ -176,6 +188,29 @@ export default function AdminDashboardPage() {
     }
   }
 
+  async function moderateReview(reviewId, isVisible) {
+    const reason = reviewReasons[reviewId]?.trim() || '';
+    if (reason.length < 3) {
+      setError('Enter a moderation reason of at least 3 characters.');
+      return;
+    }
+    setSavingReview(reviewId);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await apiRequest(`/admin/reviews/${reviewId}/moderation`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isVisible, reason }),
+      });
+      await loadDashboard();
+      setSuccess(result.message);
+    } catch (actionError) {
+      setError(actionError.message);
+    } finally {
+      setSavingReview('');
+    }
+  }
+
   async function createCategory(event) {
     event.preventDefault();
     setSavingCategory('new');
@@ -238,6 +273,38 @@ export default function AdminDashboardPage() {
       setError(actionError.message);
     } finally {
       setSavingAccount('');
+    }
+  }
+
+  async function reviewDeletionRequest(requestId, status) {
+    const reason = deletionReasons[requestId]?.trim() || '';
+    if (reason.length < 3) {
+      setError('Enter a decision reason of at least 3 characters.');
+      return;
+    }
+    if (
+      status === 'approved' &&
+      !window.confirm('Approve this request? The account will be anonymized, its private identity uploads removed, provider listings disabled, and access revoked. Booking, payment and audit records will remain.')
+    ) {
+      return;
+    }
+    setSavingDeletion(requestId);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await apiRequest(`/admin/deletion-requests/${requestId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, reason }),
+      });
+      await loadDashboard();
+      setSuccess(result.message);
+      if (result.cleanupWarning) {
+        setError(result.cleanupWarning);
+      }
+    } catch (actionError) {
+      setError(actionError.message);
+    } finally {
+      setSavingDeletion('');
     }
   }
 
@@ -374,6 +441,61 @@ export default function AdminDashboardPage() {
         </section>
       )}
 
+      {tab === 'deletions' && (
+        <section>
+          <h2 className="mb-2 text-xl font-bold">Account deletion requests</h2>
+          <p className="mb-4 max-w-3xl text-sm leading-6 text-slate-600">
+            Approval anonymizes direct account and provider-profile identifiers, removes identity/profile uploads, disables provider listings, and revokes access. Existing bookings, payments and audit records are retained. Requests with open work cannot be approved until that work is resolved.
+          </p>
+          {deletionRequests.length === 0 ? <EmptyState message="No account deletion requests are awaiting review." /> : (
+            <div className="space-y-3">
+              {deletionRequests.map((request) => (
+                <article className="rounded-2xl border border-stone-200 bg-white p-5" key={request.id}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-bold">{request.user.firstName} {request.user.lastName}</h3>
+                      <p className="mt-1 text-sm text-slate-600">{request.user.email} · {request.user.role}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Submitted {new Date(request.requestedAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <StatusBadge status={request.user.accountStatus} />
+                  </div>
+                  <label className="mt-4 block text-sm font-semibold text-slate-700" htmlFor={`deletion-reason-${request.id}`}>
+                    Decision reason (required)
+                  </label>
+                  <textarea
+                    className="mt-1.5 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+                    id={`deletion-reason-${request.id}`}
+                    maxLength={1000}
+                    onChange={(event) => setDeletionReasons((current) => ({ ...current, [request.id]: event.target.value }))}
+                    rows={2}
+                    value={deletionReasons[request.id] || ''}
+                  />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {['approved', 'rejected'].map((status) => (
+                      <button
+                        className={`rounded-lg border px-3 py-2 text-xs font-semibold capitalize disabled:opacity-50 ${
+                          status === 'approved'
+                            ? 'border-red-200 text-red-700 hover:bg-red-50'
+                            : 'border-stone-300 text-slate-700 hover:bg-stone-50'
+                        }`}
+                        disabled={savingDeletion === request.id}
+                        key={status}
+                        onClick={() => reviewDeletionRequest(request.id, status)}
+                        type="button"
+                      >
+                        {savingDeletion === request.id ? 'Saving…' : status}
+                      </button>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {tab === 'complaints' && (
         <section>
           <h2 className="mb-4 text-xl font-bold">Complaint moderation</h2>
@@ -427,6 +549,65 @@ export default function AdminDashboardPage() {
                   </article>
                 );
               })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {tab === 'reviews' && (
+        <section>
+          <h2 className="mb-4 text-xl font-bold">Review moderation</h2>
+          {reviews.length === 0 ? <EmptyState message="No reviews have been submitted." /> : (
+            <div className="space-y-3">
+              {reviews.map((review) => (
+                <article className="rounded-2xl border border-stone-200 bg-white p-5" key={review.id}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-bold">{review.rating.toFixed(1)} / 5 · Booking {review.bookingReference}</h3>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {review.reviewer.firstName} {review.reviewer.lastName} reviewed {review.provider.firstName} {review.provider.lastName}
+                        {' · '}{new Date(review.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <StatusBadge status={review.isVisible ? 'visible' : 'hidden'} />
+                  </div>
+                  <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                    {review.comment || 'No written feedback.'}
+                  </p>
+                  {review.moderationReason && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Latest moderation reason: {review.moderationReason}
+                      {review.moderator ? ` · ${review.moderator.firstName} ${review.moderator.lastName}` : ''}
+                    </p>
+                  )}
+                  <div className="mt-4 border-t border-stone-100 pt-4">
+                    <label className="block text-sm font-semibold text-slate-700" htmlFor={`review-reason-${review.id}`}>
+                      Moderation reason
+                    </label>
+                    <textarea
+                      className="mt-1.5 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+                      id={`review-reason-${review.id}`}
+                      maxLength={1000}
+                      onChange={(event) => setReviewReasons((current) => ({ ...current, [review.id]: event.target.value }))}
+                      rows={2}
+                      value={reviewReasons[review.id] || ''}
+                    />
+                    <button
+                      className={`mt-2 rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                        review.isVisible
+                          ? 'border-red-200 text-red-700 hover:bg-red-50'
+                          : 'border-emerald-200 text-emerald-800 hover:bg-emerald-50'
+                      }`}
+                      disabled={savingReview === review.id}
+                      onClick={() => moderateReview(review.id, !review.isVisible)}
+                      type="button"
+                    >
+                      {savingReview === review.id ? 'Saving…' : review.isVisible ? 'Hide review' : 'Restore review'}
+                    </button>
+                  </div>
+                </article>
+              ))}
+              <p className="text-xs text-slate-500">Showing up to 200 most recent reviews.</p>
             </div>
           )}
         </section>

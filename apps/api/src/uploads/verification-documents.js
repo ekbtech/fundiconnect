@@ -85,6 +85,25 @@ export async function removeVerificationDocument(filePath) {
   await unlink(filePath);
 }
 
+export async function removeStoredVerificationDocument(storageKey, extension) {
+  if (
+    typeof storageKey !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(storageKey) ||
+    !['pdf', 'jpg', 'png'].includes(extension)
+  ) {
+    throw new Error('Invalid private verification document reference.');
+  }
+  try {
+    await unlink(join(getUploadDirectory(), `${storageKey}.${extension}`));
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+}
+
 export async function readVerificationDocument(storageKey, extension) {
   if (
     typeof storageKey !== 'string' ||

@@ -100,6 +100,14 @@ router.post(
     let storedPath = null;
     try {
       await connection.beginTransaction();
+      const [accounts] = await connection.execute(
+        'SELECT account_status FROM users WHERE id = ? FOR UPDATE',
+        [req.user.id],
+      );
+      if (accounts.length === 0 || accounts[0].account_status !== 'active') {
+        await connection.rollback();
+        return res.status(403).json({ message: 'Suspended accounts cannot submit verification documents.' });
+      }
       const [[profile]] = await connection.execute(
         'SELECT id FROM provider_profiles WHERE user_id = ? FOR UPDATE',
         [req.user.id],
@@ -415,10 +423,22 @@ router.patch(
     if (profiles.length === 0) {
       return res.status(404).json({ message: 'Fundi profile was not found.' });
     }
-    await pool.execute(
-      `UPDATE provider_profiles SET ${assignments.join(', ')} WHERE user_id = ?`,
+    const [result] = await pool.execute(
+      `UPDATE provider_profiles p
+         JOIN users u ON u.id = p.user_id
+          SET ${assignments.join(', ')}
+        WHERE p.user_id = ? AND u.account_status = 'active'`,
       values,
     );
+    if (result.affectedRows === 0) {
+      const [[account]] = await pool.execute(
+        'SELECT account_status FROM users WHERE id = ?',
+        [req.user.id],
+      );
+      if (!account || account.account_status !== 'active') {
+        return res.status(403).json({ message: 'Suspended accounts cannot update provider profiles.' });
+      }
+    }
     return res.status(200).json({ message: 'Fundi profile updated.' });
   }),
 );

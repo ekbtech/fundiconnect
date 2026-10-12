@@ -41,8 +41,8 @@ router.get(
               c.id AS category_id, c.name AS category_name, c.slug AS category_slug,
               pp.id AS provider_id, pp.business_name, pp.bio, pp.experience_years,
               pp.is_verified, u.id AS provider_user_id, u.first_name, u.last_name, u.profile_photo,
-              (SELECT AVG(r.rating) FROM reviews r WHERE r.provider_id = pp.id) AS average_rating,
-              (SELECT COUNT(*) FROM reviews r WHERE r.provider_id = pp.id) AS total_reviews
+              (SELECT AVG(r.rating) FROM reviews r WHERE r.provider_id = pp.id AND r.is_visible = TRUE) AS average_rating,
+              (SELECT COUNT(*) FROM reviews r WHERE r.provider_id = pp.id AND r.is_visible = TRUE) AS total_reviews
          FROM services s
          JOIN service_categories c ON c.id = s.category_id
          JOIN provider_profiles pp ON pp.id = s.provider_id

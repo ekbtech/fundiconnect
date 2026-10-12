@@ -8,6 +8,7 @@ import DashboardShell, {
   MetricCard,
   StatusBadge,
 } from '../../components/DashboardShell.js';
+import AccountDeletionRequest from '../../components/AccountDeletionRequest.js';
 import NotificationPreferences from '../../components/NotificationPreferences.js';
 import { apiRequest, formatKES, getApiUrl, roleDashboard } from '../../lib/api.js';
 
@@ -577,6 +578,7 @@ export default function FundiDashboardPage() {
       )}
 
       {tab === 'profile' && (
+        <>
         <div className="grid gap-6 lg:grid-cols-2">
           <section className="rounded-2xl border border-stone-200 bg-white p-5">
             <h2 className="text-xl font-bold">Professional profile</h2>
@@ -705,6 +707,8 @@ export default function FundiDashboardPage() {
             </div>
           </section>
         </div>
+        <AccountDeletionRequest />
+        </>
       )}
 
       {tab === 'notifications' && (

@@ -1,9 +1,16 @@
+import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
+import { getAnonymizedEmail, isValidDeletionDecision } from '../accounts/deletion.js';
+import { hashPassword } from '../auth/password.js';
 import { getPool } from '../db/pool.js';
 import { asyncHandler } from '../middleware/async-handler.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { authorizeRole } from '../middleware/authorize-role.js';
-import { readVerificationDocument } from '../uploads/verification-documents.js';
+import { removeStoredPhoto } from '../uploads/media.js';
+import {
+  readVerificationDocument,
+  removeStoredVerificationDocument,
+} from '../uploads/verification-documents.js';
 import {
   createNotificationForUser,
   emailNotificationForUser,
@@ -29,6 +36,15 @@ export function isValidAccountStatusChange(currentStatus, nextStatus, reason) {
     ['active', 'suspended'].includes(currentStatus) &&
     ['active', 'suspended'].includes(nextStatus) &&
     currentStatus !== nextStatus &&
+    typeof reason === 'string' &&
+    reason.trim().length >= 3 &&
+    reason.trim().length <= 1000
+  );
+}
+
+export function isValidReviewModeration(isVisible, reason) {
+  return (
+    typeof isVisible === 'boolean' &&
     typeof reason === 'string' &&
     reason.trim().length >= 3 &&
     reason.trim().length <= 1000
@@ -651,6 +667,401 @@ router.patch(
     } finally {
       connection.release();
     }
+  }),
+);
+
+router.get(
+  '/reviews',
+  asyncHandler(async (req, res) => {
+    const [rows] = await getPool().execute(
+      `SELECT r.id, r.booking_id, r.rating, r.comment, r.created_at,
+              r.is_visible, r.moderation_reason, r.moderated_at,
+              b.booking_reference,
+              reviewer.first_name AS reviewer_first_name,
+              reviewer.last_name AS reviewer_last_name,
+              provider.first_name AS provider_first_name,
+              provider.last_name AS provider_last_name,
+              moderator.first_name AS moderator_first_name,
+              moderator.last_name AS moderator_last_name
+         FROM reviews r
+         JOIN bookings b ON b.id = r.booking_id
+         JOIN users reviewer ON reviewer.id = r.reviewer_id
+         JOIN provider_profiles pp ON pp.id = r.provider_id
+         JOIN users provider ON provider.id = pp.user_id
+         LEFT JOIN users moderator ON moderator.id = r.moderated_by
+        ORDER BY r.created_at DESC, r.id DESC
+        LIMIT 200`,
+    );
+    return res.status(200).json({
+      reviews: rows.map((review) => ({
+        id: String(review.id),
+        bookingId: String(review.booking_id),
+        bookingReference: review.booking_reference,
+        rating: Number(review.rating),
+        comment: review.comment,
+        isVisible: Boolean(review.is_visible),
+        moderationReason: review.moderation_reason,
+        moderatedAt: review.moderated_at,
+        createdAt: review.created_at,
+        reviewer: {
+          firstName: review.reviewer_first_name,
+          lastName: review.reviewer_last_name,
+        },
+        provider: {
+          firstName: review.provider_first_name,
+          lastName: review.provider_last_name,
+        },
+        moderator: review.moderator_first_name
+          ? {
+              firstName: review.moderator_first_name,
+              lastName: review.moderator_last_name,
+            }
+          : null,
+      })),
+    });
+  }),
+);
+
+router.patch(
+  '/reviews/:reviewId/moderation',
+  asyncHandler(async (req, res) => {
+    const reviewId = Number(req.params.reviewId);
+    const { isVisible } = req.body || {};
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+    if (!Number.isSafeInteger(reviewId) || reviewId < 1 || !isValidReviewModeration(isVisible, reason)) {
+      return res.status(400).json({
+        message: 'Provide a visibility state and a moderation reason of 3 to 1000 characters.',
+      });
+    }
+
+    const connection = await getPool().getConnection();
+    try {
+      await connection.beginTransaction();
+      const [reviews] = await connection.execute(
+        'SELECT is_visible FROM reviews WHERE id = ? FOR UPDATE',
+        [reviewId],
+      );
+      if (reviews.length === 0) {
+        await connection.rollback();
+        return res.status(404).json({ message: 'Review was not found.' });
+      }
+      const previousIsVisible = Boolean(reviews[0].is_visible);
+      if (previousIsVisible === isVisible) {
+        await connection.rollback();
+        return res.status(409).json({
+          message: `This review is already ${isVisible ? 'visible' : 'hidden'}.`,
+        });
+      }
+
+      await connection.execute(
+        `UPDATE reviews
+            SET is_visible = ?, moderation_reason = ?, moderated_by = ?, moderated_at = CURRENT_TIMESTAMP
+          WHERE id = ?`,
+        [isVisible, reason, req.user.id, reviewId],
+      );
+      await connection.execute(
+        `INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, details)
+         VALUES (?, ?, 'review', ?, ?)`,
+        [
+          req.user.id,
+          isVisible ? 'review_restored' : 'review_hidden',
+          reviewId,
+          JSON.stringify({ previousIsVisible, isVisible, reason }),
+        ],
+      );
+      await connection.commit();
+      return res.status(200).json({
+        message: `Review ${isVisible ? 'restored' : 'hidden'} from public listings.`,
+        isVisible,
+      });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }),
+);
+
+router.get(
+  '/deletion-requests',
+  asyncHandler(async (req, res) => {
+    const status = typeof req.query.status === 'string' ? req.query.status : 'pending';
+    if (!['pending', 'approved', 'rejected', 'cancelled', 'all'].includes(status)) {
+      return res.status(400).json({ message: 'Provide a valid deletion request status filter.' });
+    }
+    const statusFilter = status === 'all' ? '' : 'WHERE request.status = ?';
+    const values = status === 'all' ? [] : [status];
+    const [rows] = await getPool().execute(
+      `SELECT request.id, request.status, request.requested_at, request.reviewed_at,
+              request.review_reason, account.id AS user_id, account.first_name, account.last_name,
+              account.email, account.role, account.account_status
+         FROM account_deletion_requests request
+         JOIN users account ON account.id = request.user_id
+        ${statusFilter}
+        ORDER BY request.requested_at DESC, request.id DESC
+        LIMIT 100`,
+      values,
+    );
+    return res.status(200).json({
+      requests: rows.map((request) => ({
+        id: String(request.id),
+        status: request.status,
+        requestedAt: request.requested_at,
+        reviewedAt: request.reviewed_at,
+        reviewReason: request.review_reason,
+        user: {
+          id: String(request.user_id),
+          firstName: request.first_name,
+          lastName: request.last_name,
+          email: request.email,
+          role: request.role,
+          accountStatus: request.account_status,
+        },
+      })),
+    });
+  }),
+);
+
+router.patch(
+  '/deletion-requests/:requestId',
+  asyncHandler(async (req, res) => {
+    const requestId = Number(req.params.requestId);
+    const status = req.body?.status;
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+    if (
+      !Number.isSafeInteger(requestId) ||
+      requestId < 1 ||
+      !isValidDeletionDecision(status, reason)
+    ) {
+      return res.status(400).json({
+        message: 'Provide an approved or rejected decision and a reason of 3 to 1000 characters.',
+      });
+    }
+
+    const replacementPasswordHash = status === 'approved'
+      ? await hashPassword(randomBytes(32).toString('base64url'))
+      : null;
+    const connection = await getPool().getConnection();
+    let privateFiles = [];
+    try {
+      await connection.beginTransaction();
+      const [requestOwners] = await connection.execute(
+        'SELECT user_id FROM account_deletion_requests WHERE id = ?',
+        [requestId],
+      );
+      if (requestOwners.length === 0) {
+        await connection.rollback();
+        return res.status(404).json({ message: 'Account deletion request was not found.' });
+      }
+      const userId = requestOwners[0].user_id;
+      const [accounts] = await connection.execute(
+        `SELECT id, role, account_status, profile_photo
+           FROM users WHERE id = ? FOR UPDATE`,
+        [userId],
+      );
+      const [requests] = await connection.execute(
+        `SELECT id, status FROM account_deletion_requests
+          WHERE id = ? AND user_id = ? FOR UPDATE`,
+        [requestId, userId],
+      );
+      if (accounts.length === 0 || requests.length === 0) {
+        await connection.rollback();
+        return res.status(404).json({ message: 'Account deletion request was not found.' });
+      }
+      const account = accounts[0];
+      if (requests[0].status !== 'pending') {
+        await connection.rollback();
+        return res.status(409).json({ message: 'This deletion request is no longer pending review.' });
+      }
+      if (!['customer', 'fundi'].includes(account.role)) {
+        await connection.rollback();
+        return res.status(409).json({ message: 'Administrator accounts cannot be deleted through this workflow.' });
+      }
+
+      if (status === 'approved') {
+        const [[provider]] = await connection.execute(
+          'SELECT id FROM provider_profiles WHERE user_id = ? FOR UPDATE',
+          [userId],
+        );
+        const providerId = provider?.id ?? null;
+        const [[openWork]] = await connection.execute(
+          `SELECT
+              (SELECT COUNT(*) FROM bookings b
+                LEFT JOIN provider_profiles booking_provider ON booking_provider.id = b.provider_id
+               WHERE (b.customer_id = ? OR booking_provider.user_id = ?)
+                 AND b.status IN ('requested', 'quoted', 'confirmed', 'accepted', 'in_progress', 'completed', 'disputed'))
+            + (SELECT COUNT(*) FROM quotation_requests qr
+                LEFT JOIN provider_profiles request_provider ON request_provider.id = qr.provider_id
+               WHERE (qr.customer_id = ? OR request_provider.user_id = ?)
+                 AND qr.status IN ('requested', 'quoted')) AS unresolved_count`,
+          [userId, userId, userId, userId],
+        );
+        if (Number(openWork.unresolved_count) > 0) {
+          await connection.rollback();
+          return res.status(409).json({
+            message: 'Resolve open bookings and quotation requests before approving account deletion.',
+            unresolvedWorkItems: Number(openWork.unresolved_count),
+          });
+        }
+
+        const profilePhotoMatch = /^([0-9a-f-]{36})\.(jpg|png)$/i.exec(account.profile_photo || '');
+        if (profilePhotoMatch) {
+          privateFiles.push({ area: 'profile', storageKey: profilePhotoMatch[1], extension: profilePhotoMatch[2] });
+        }
+
+        if (providerId !== null) {
+          const [documents] = await connection.execute(
+            `SELECT storage_key, file_extension
+               FROM provider_verification_documents
+              WHERE provider_id = ?
+              FOR UPDATE`,
+            [providerId],
+          );
+          privateFiles.push(...documents.map((document) => ({
+            area: 'verification',
+            storageKey: document.storage_key,
+            extension: document.file_extension,
+          })));
+          await connection.execute(
+            'DELETE FROM provider_verification_documents WHERE provider_id = ?',
+            [providerId],
+          );
+          await connection.execute(
+            'UPDATE services SET is_active = FALSE WHERE provider_id = ?',
+            [providerId],
+          );
+          await connection.execute(
+            'DELETE FROM provider_service_areas WHERE provider_id = ?',
+            [providerId],
+          );
+          await connection.execute(
+            `UPDATE provider_profiles
+                SET business_name = NULL, bio = NULL, is_verified = FALSE
+              WHERE id = ?`,
+            [providerId],
+          );
+        }
+
+        if (account.role === 'customer') {
+          const [photos] = await connection.execute(
+            `SELECT photo.storage_key, photo.file_extension
+               FROM quotation_request_photos photo
+               JOIN quotation_requests request ON request.id = photo.request_id
+              WHERE request.customer_id = ?
+              FOR UPDATE`,
+            [userId],
+          );
+          privateFiles.push(...photos.map((photo) => ({
+            area: 'quotation',
+            storageKey: photo.storage_key,
+            extension: photo.file_extension,
+          })));
+          await connection.execute(
+            `DELETE photo
+               FROM quotation_request_photos photo
+               JOIN quotation_requests request ON request.id = photo.request_id
+              WHERE request.customer_id = ?`,
+            [userId],
+          );
+        }
+
+        const [reviews] = await connection.execute(
+          'SELECT id FROM reviews WHERE reviewer_id = ? AND is_visible = TRUE FOR UPDATE',
+          [userId],
+        );
+        const reviewReason = 'Review content removed after reviewer account anonymization.';
+        if (reviews.length > 0) {
+          await connection.execute(
+            `UPDATE reviews
+                SET is_visible = FALSE, comment = '', moderation_reason = ?,
+                    moderated_by = ?, moderated_at = CURRENT_TIMESTAMP
+              WHERE reviewer_id = ? AND is_visible = TRUE`,
+            [reviewReason, req.user.id, userId],
+          );
+          for (const review of reviews) {
+            await connection.execute(
+              `INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, details)
+               VALUES (?, 'review_hidden', 'review', ?, ?)`,
+              [
+                req.user.id,
+                review.id,
+                JSON.stringify({ reason: reviewReason, deletionRequestId: requestId }),
+              ],
+            );
+          }
+        }
+        await connection.execute(
+          `UPDATE audit_logs
+              SET details = JSON_SET(JSON_REMOVE(details, '$.comment'), '$.reviewContentRedacted', TRUE)
+            WHERE actor_id = ? AND entity_type = 'review' AND action = 'review_submitted'
+              AND details IS NOT NULL AND JSON_CONTAINS_PATH(details, 'one', '$.comment')`,
+          [userId],
+        );
+        await connection.execute(
+          `UPDATE users
+              SET email = ?, first_name = 'Deleted', last_name = 'Account',
+                  password_hash = ?, account_status = 'suspended',
+                  email_verified_at = NULL, profile_photo = NULL
+            WHERE id = ?`,
+          [getAnonymizedEmail(userId), replacementPasswordHash, userId],
+        );
+        await connection.execute(
+          `UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND revoked_at IS NULL`,
+          [userId],
+        );
+        await connection.execute(
+          'DELETE FROM auth_action_tokens WHERE user_id = ?',
+          [userId],
+        );
+      }
+
+      await connection.execute(
+        `UPDATE account_deletion_requests
+            SET status = ?, review_reason = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP
+          WHERE id = ?`,
+        [status, reason, req.user.id, requestId],
+      );
+      await connection.execute(
+        `INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, details)
+         VALUES (?, ?, 'account_deletion_request', ?, ?)`,
+        [
+          req.user.id,
+          status === 'approved' ? 'account_anonymized' : 'account_deletion_rejected',
+          requestId,
+          JSON.stringify({ reason, retainedFinancialBookingAndAuditRecords: true }),
+        ],
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+
+    const cleanupFailures = [];
+    for (const file of privateFiles) {
+      try {
+        if (file.area === 'verification') {
+          await removeStoredVerificationDocument(file.storageKey, file.extension);
+        } else {
+          await removeStoredPhoto(file.area, file.storageKey, file.extension);
+        }
+      } catch (error) {
+        console.error(`Could not remove an account deletion ${file.area} upload.`, error);
+        cleanupFailures.push(file.area);
+      }
+    }
+    return res.status(200).json({
+      message: status === 'approved'
+        ? 'Account anonymized; booking, payment and audit records were retained.'
+        : 'Account deletion request rejected.',
+      cleanupWarning: cleanupFailures.length > 0
+        ? `The account was anonymized, but ${cleanupFailures.length} private upload(s) require operator cleanup.`
+        : null,
+    });
   }),
 );
 

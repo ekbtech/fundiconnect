@@ -111,5 +111,13 @@ export async function removeStoredPhoto(area, storageKey, extension) {
   ) {
     throw new Error('Invalid private photo storage reference.');
   }
-  await unlink(join(getUploadDirectory(area), `${storageKey}.${extension}`));
+  try {
+    await unlink(join(getUploadDirectory(area), `${storageKey}.${extension}`));
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
 }

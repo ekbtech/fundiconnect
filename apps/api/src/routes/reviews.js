@@ -61,14 +61,14 @@ router.get(
               reviewer.last_name AS reviewer_last_name
          FROM reviews r
          JOIN users reviewer ON reviewer.id = r.reviewer_id
-        WHERE r.provider_id = ?
+        WHERE r.provider_id = ? AND r.is_visible = TRUE
         ORDER BY r.created_at DESC, r.id DESC`,
       [providerId],
     );
     const [[summary]] = await pool.execute(
       `SELECT AVG(rating) AS average_rating, COUNT(*) AS total_reviews
          FROM reviews
-        WHERE provider_id = ?`,
+        WHERE provider_id = ? AND is_visible = TRUE`,
       [providerId],
     );
 

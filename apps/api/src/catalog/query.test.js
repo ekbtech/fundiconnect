@@ -83,7 +83,7 @@ test('service filters parameterize user data and require approved public listing
   assert.match(built.whereSql, /pp\.verification_status = 'approved'/);
   assert.match(built.whereSql, /u\.account_status = 'active'/);
   assert.match(built.whereSql, /EXISTS \(SELECT 1 FROM provider_service_areas/);
-  assert.match(built.whereSql, /SELECT AVG\(r\.rating\) FROM reviews/);
+  assert.match(built.whereSql, /SELECT AVG\(r\.rating\) FROM reviews r WHERE r\.provider_id = pp\.id AND r\.is_visible = TRUE/);
   assert.match(built.whereSql, /provider_availability pa/);
   assert.match(built.whereSql, /NOT EXISTS \(/);
   assert.doesNotMatch(built.whereSql, /100%_safe|Nairobi|Westlands|plumbing/);

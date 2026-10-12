@@ -133,7 +133,7 @@ export function buildServiceFilters(filters) {
   }
   if (filters.minRating !== null) {
     clauses.push(
-      '(SELECT AVG(r.rating) FROM reviews r WHERE r.provider_id = pp.id) >= ?',
+      '(SELECT AVG(r.rating) FROM reviews r WHERE r.provider_id = pp.id AND r.is_visible = TRUE) >= ?',
     );
     parameters.push(filters.minRating);
   }

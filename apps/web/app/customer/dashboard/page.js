@@ -8,6 +8,7 @@ import DashboardShell, {
   MetricCard,
   StatusBadge,
 } from '../../components/DashboardShell.js';
+import AccountDeletionRequest from '../../components/AccountDeletionRequest.js';
 import NotificationPreferences from '../../components/NotificationPreferences.js';
 import { apiRequest, formatKES, getApiUrl, roleDashboard } from '../../lib/api.js';
 
@@ -581,51 +582,54 @@ function CustomerDashboard() {
       )}
 
       {tab === 'account' && (
-        <section className="max-w-xl rounded-2xl border border-stone-200 bg-white p-5">
-          <h2 className="text-xl font-bold">Your profile</h2>
-          <p className="text-sm text-slate-600">{user.email} · Customer</p>
-          {user.profilePhoto && (
-            <img
-              alt={`${user.firstName} ${user.lastName}`}
-              className="mt-4 h-20 w-20 rounded-full object-cover"
-              src={`${getApiUrl()}${user.profilePhoto}`}
-            />
-          )}
-          <form
-            className="mt-4 space-y-4"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              const form = event.currentTarget;
-              const saved = await perform(
-                () => apiRequest('/users/me/profile-photo', {
-                  method: 'POST',
-                  body: new FormData(form),
-                }),
-                'Profile photo updated.',
-              );
-              if (saved) form.reset();
-            }}
-          >
-            <label className="block text-sm font-semibold text-slate-700">
-              Profile photo (JPEG or PNG, up to 5 MB)
-              <input
-                accept=".jpg,.jpeg,.png,image/jpeg,image/png"
-                className="mt-1.5 block w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-sm font-normal"
-                name="photo"
-                required
-                type="file"
+        <div className="space-y-6">
+          <section className="max-w-xl rounded-2xl border border-stone-200 bg-white p-5">
+            <h2 className="text-xl font-bold">Your profile</h2>
+            <p className="text-sm text-slate-600">{user.email} · Customer</p>
+            {user.profilePhoto && (
+              <img
+                alt={`${user.firstName} ${user.lastName}`}
+                className="mt-4 h-20 w-20 rounded-full object-cover"
+                src={`${getApiUrl()}${user.profilePhoto}`}
               />
-            </label>
-            <button className="rounded-lg border border-stone-300 px-4 py-2.5 text-sm font-bold text-slate-800 disabled:opacity-50" disabled={saving} type="submit">
-              {saving ? 'Uploading…' : 'Upload photo'}
-            </button>
-          </form>
-          <form className="mt-6 space-y-4 border-t border-stone-200 pt-5" onSubmit={saveProfile}>
-            <TextField label="First name" maxLength={100} onChange={(event) => setProfileForm({ ...profileForm, firstName: event.target.value })} required value={profileForm.firstName} />
-            <TextField label="Last name" maxLength={100} onChange={(event) => setProfileForm({ ...profileForm, lastName: event.target.value })} required value={profileForm.lastName} />
-            <button className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50" disabled={saving} type="submit">Save profile</button>
-          </form>
-        </section>
+            )}
+            <form
+              className="mt-4 space-y-4"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                const saved = await perform(
+                  () => apiRequest('/users/me/profile-photo', {
+                    method: 'POST',
+                    body: new FormData(form),
+                  }),
+                  'Profile photo updated.',
+                );
+                if (saved) form.reset();
+              }}
+            >
+              <label className="block text-sm font-semibold text-slate-700">
+                Profile photo (JPEG or PNG, up to 5 MB)
+                <input
+                  accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                  className="mt-1.5 block w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-sm font-normal"
+                  name="photo"
+                  required
+                  type="file"
+                />
+              </label>
+              <button className="rounded-lg border border-stone-300 px-4 py-2.5 text-sm font-bold text-slate-800 disabled:opacity-50" disabled={saving} type="submit">
+                {saving ? 'Uploading…' : 'Upload photo'}
+              </button>
+            </form>
+            <form className="mt-6 space-y-4 border-t border-stone-200 pt-5" onSubmit={saveProfile}>
+              <TextField label="First name" maxLength={100} onChange={(event) => setProfileForm({ ...profileForm, firstName: event.target.value })} required value={profileForm.firstName} />
+              <TextField label="Last name" maxLength={100} onChange={(event) => setProfileForm({ ...profileForm, lastName: event.target.value })} required value={profileForm.lastName} />
+              <button className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50" disabled={saving} type="submit">Save profile</button>
+            </form>
+          </section>
+          <AccountDeletionRequest />
+        </div>
       )}
     </DashboardShell>
   );
